@@ -1,0 +1,70 @@
+name: Тесты и деплой
+
+# Push в main: тесты → деплой на сервер заказчика через Deployer.
+# Атомарные выкладки: новый релиз собирается рядом, затем переключается symlink.
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pgsql, redis, mbstring, bcmath
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Установка зависимостей
+        run: |
+          composer install --no-interaction --prefer-dist
+          npm ci
+
+      - name: Подготовка окружения
+        run: |
+          cp .env.example .env
+          php artisan key:generate
+          touch database/database.sqlite
+          php artisan migrate --seed
+
+      - name: Сборка фронтенда
+        run: npm run build
+
+      - name: Тесты
+        env:
+          DB_CONNECTION: sqlite
+          DB_DATABASE: ':memory:'
+          QUEUE_CONNECTION: sync
+          MAIL_MAILER: array
+        run: php artisan test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    # Деплой только при наличии секретов сервера заказчика.
+    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pgsql, redis
+
+      - name: Установка Deployer
+        run: composer global require deployer/deployer
+
+      - name: Деплой на сервер заказчика
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          mkdir -p ~/.ssh && echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519 && chmod 600 ~/.ssh/id_ed25519
+          dep deploy production -vvv

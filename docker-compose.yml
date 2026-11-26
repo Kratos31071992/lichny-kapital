@@ -1,0 +1,34 @@
+# Окружение разработки «Личный капитал»: приложение, PostgreSQL, Redis
+services:
+  app:
+    image: php:8.3-apache
+    container_name: kapital-app
+    ports:
+      - "80:80"
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      - postgres
+      - redis
+    # В боевом образе — отдельный Dockerfile с расширениями pgsql, redis и т.д.
+
+  postgres:
+    image: postgres:16
+    container_name: kapital-db
+    environment:
+      POSTGRES_DB: kapital
+      POSTGRES_USER: kapital
+      POSTGRES_PASSWORD: secret
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7-alpine
+    container_name: kapital-redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  pgdata:
